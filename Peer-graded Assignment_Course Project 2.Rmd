@@ -1,0 +1,132 @@
+---
+title: "Impact of extreme weather events on human helath and estimating fatalities"
+author: "Manjari singh"
+date: "2024-06-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Synopsis
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern. This project involves exploring the NOAA's storm database, which tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage. The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events, such as:
+- Across the US, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+- Across the US, which types of events have the greatest economic consequences?
+
+The result indicated that Tornado followed by Excessive heat, Tstm Wind and Flooding are the ones having greatest impact on population health. Moreover, Flood followed by Hurricane/typhoon, Tornado and Storm Surge are the ones having greatest impact on economic.
+
+#  Data Processing
+### set directory, load data, and see data structure
+```{r}
+setwd("C:/Users/MSingh/coursera/assignment/data")
+noaa_data <- read.csv("repdata_data_StormData.csv", na.strings = TRUE)
+str(noaa_data)
+```
+
+since all columns are of character datatype, we need to tranform few columns which has o be used during data analysis 
+### transform datatype of required columns to numeric type
+```{r}
+library(dplyr) 
+
+noaa_data <- noaa_data %>% mutate_at(c('INJURIES', 'FATALITIES', 'PROPDMG', 'CROPDMG'), as.numeric)
+str(noaa_data)
+```
+
+# Events which are most harmful with respect to population health
+
+Tin order to determine which events are most harmful to population health, examine injuries and fatalities data for each event type
+```{r}
+casualties <- aggregate(cbind(noaa_data$INJURIES, noaa_data$FATALITIES) ~ noaa_data$EVTYPE, data = noaa_data, sum)
+## Change column names for better presentation
+colnames(casualties) <- c("EventType", "Injuries", "Fatalities")
+```
+
+Events that causes the most harmful impact to population health will be ones that have high Injuries and Fatalities values:
+```{r}
+## Add new column Injuries_Fatalities which is the sum of the other two
+casualties$Injuries_Fatalities <- casualties$Injuries + casualties$Fatalities
+## Sort data by Injuries_Fatalities
+casualties <- casualties[with(casualties, order(-Injuries_Fatalities)),]
+```
+
+Top 10 events area:
+```{r}
+head(casualties, 10)
+```
+# Events have the greatest economic consequences
+
+Economic consequences are determined by total property damage values (PROPDMG, PROPDMGEXP) and total crop damage value (CROPDMG, CROPDMGEXP). PROPDMGEXP and CROPDMGEXP have values of “H”, “K”, “M”, “B” (hundred, thousand, million, billion respectively multiplier). create a function to calculate this multiplier:
+```{r}
+get_exp_multiplier <- function(m) {
+    if (m %in% c('H', 'h'))
+        return (100)
+    else if (m %in% c('K', 'k'))
+        return (1000)
+    else if (m %in% c('M', 'm'))
+        return (1000000)
+    else if (m %in% c('B', 'b'))
+        return (1000000000)
+    else if (!is.na(as.numeric(m))) 
+        return (as.numeric(m) * 10)
+    else 
+        return(1)
+}
+```
+
+Then calculate total property and crop damage values:
+
+```{r}
+## Calculate total property damage
+prop_dmg_mul <- sapply(noaa_data$PROPDMGEXP, FUN=get_exp_multiplier, na.omit())
+noaa_data$total_prop_dmg <- noaa_data$PROPDMG * prop_dmg_mul
+## Get crop damage multiplier
+crop_dmg_mul <- sapply(noaa_data$CROPDMGEXP, FUN=get_exp_multiplier)
+noaa_data$total_crop_dmg <- noaa_data$CROPDMG * crop_dmg_mul
+```
+Group them by event type
+
+```{r}
+storm_econ_dmg <- aggregate(cbind(noaa_data$total_prop_dmg, noaa_data$total_crop_dmg) ~ noaa_data$EVTYPE, data = noaa_data, sum)
+## Change column names for better presentation
+colnames(storm_econ_dmg) <- c("EventType", "Property_Dmg", "Crop_Dmg")
+```
+
+Events that have the greatest economic consequences will be ones that have high property damage and crop damage values
+```{r}
+## Add new column Prop_Crop_Dmg which is the sum of the other two
+storm_econ_dmg$Prop_Crop_Dmg <- storm_econ_dmg$Property_Dmg + storm_econ_dmg$Crop_Dmg
+## Sort data by Prop_Crop_Dmg
+storm_econ_dmg <- storm_econ_dmg[with(storm_econ_dmg, order(-Prop_Crop_Dmg)),]
+```
+Here are top 10 events:
+
+```{r}
+head(storm_econ_dmg, 10)
+```
+#Results
+-From our analysis, Tornado is the one that has greatest impact on population health with over 96,000 injuries and fatalities, followed by Excessive heat, Tstm Wind and Flooding which caused around 8000 injuries and fatalities in each. 
+```{r}
+library(ggplot2)
+## Add colors
+casualties$FillColor = "blue"
+casualties[1,]$FillColor = "red"
+g1 <- ggplot(data = head(casualties, 10), aes(x = reorder(EventType, Injuries_Fatalities), y = Injuries_Fatalities, fill = FillColor)) + geom_bar(stat = "identity") + coord_flip() + theme(legend.position="none")
+g1 <- g1 + labs( x = "Event Type", y = "Total number of injury and fatality", title = "Most dangerous weather events in US")
+g1
+
+```
+
+
+- From our analysis, Flood is the one that has greatest impact on economic with $150 billions in property and crop damage, followed by Hurricane/typhoon, Tornado and Storm Surge which caused damage of $72, $57, $43 billions respectively.
+
+```{r}
+library(ggplot2)
+## Add colors
+storm_econ_dmg$FillColor = "blue"
+storm_econ_dmg[1,]$FillColor = "red"
+g2 <- ggplot(data = head(storm_econ_dmg, 10), aes(x = reorder(EventType, Prop_Crop_Dmg), y = Prop_Crop_Dmg / 10^9, fill = FillColor)) + geom_bar(stat = "identity") + coord_flip() + theme(legend.position="none")
+g2 <- g2 + labs( x = "Event Type", y = "Property and Crop Damamge (in billion dollars)", title = "Economy impact weather events in US")
+g2
+```
+
